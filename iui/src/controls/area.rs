@@ -22,10 +22,16 @@ pub trait AreaHandler {
     }
 }
 
+// Holds an AreaHandler, which can be either an owned, boxed object, or a reference to 
+// a shared object. 
+
 pub enum AreaHandlerTraitObject {
     Box(Box<dyn AreaHandler>),
     Rc(Rc<RefCell<dyn AreaHandler>>),
 }
+
+// A wrapper implementation of AreaHandler that calls the implementation on the underlying
+// object.
 
 impl AreaHandler for AreaHandlerTraitObject {
     fn draw(&mut self, area: &Area, area_draw_params: &AreaDrawParams) {

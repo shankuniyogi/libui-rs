@@ -7,6 +7,11 @@ use iui::prelude::*;
 use std::rc::Rc;
 use std::cell::RefCell;
 
+// This example shows how to use a reference-counted AreaHandler implementation to create an
+// interactive canvas. The canvas is a simple colored box that changes color when the mouse is
+// clicked. The value of the color can be changed by the user, or programmatically. The handler
+// also includes an event handler that can be used to respond to user-initiated changes.
+
 enum Color {
     Red,
     Green,
@@ -70,17 +75,14 @@ fn main() {
     let mut hbox = HorizontalBox::new(&ui);
 
     let mut color_canvas = ColorCanvas::new(Color::Red);
-
-    // This won't work.
-    // let area = Area::new(&ui, Box::new(color_canvas));
-    // color_canvas.color = Color::Blue;
-    
-    // But this will.
     let c = Rc::new(RefCell::new(color_canvas));
     let area = Area::new(&ui, c.clone());
+
+    // Demonstrate changing the color externally after the canvas has been created. This wouldn't
+    // be possible if the AreaHandler was a Box rather than a Rc<RefCell>
     c.borrow_mut().color = Color::Blue;
 
-    // As will this.
+    // Hook up an event handler that redraws the box when the color changes.
     let ui_clone = ui.clone();
     c.borrow_mut().on_changed = Some(Box::new(move |c, area| { area.queue_redraw_all(&ui_clone); }));
 
