@@ -3,6 +3,8 @@
 use controls::Control;
 use draw;
 use std::mem;
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::os::raw::c_int;
 use ui::UI;
 pub use ui_sys::uiExtKey as ExtKey;
@@ -20,14 +22,68 @@ pub trait AreaHandler {
     }
 }
 
+pub enum AreaHandlerTraitObject {
+    Box(Box<dyn AreaHandler>),
+    Rc(Rc<RefCell<dyn AreaHandler>>),
+}
+
+impl AreaHandler for AreaHandlerTraitObject {
+    fn draw(&mut self, area: &Area, area_draw_params: &AreaDrawParams) {
+        match self {
+            AreaHandlerTraitObject::Box(handler) => handler.draw(area, area_draw_params),
+            AreaHandlerTraitObject::Rc(handler) => handler.borrow_mut().draw(area, area_draw_params),
+        }
+    }
+
+    fn mouse_event(&mut self, area: &Area, area_mouse_event: &AreaMouseEvent) {
+        match self {
+            AreaHandlerTraitObject::Box(handler) => handler.mouse_event(area, area_mouse_event),
+            AreaHandlerTraitObject::Rc(handler) => handler.borrow_mut().mouse_event(area, area_mouse_event),
+        }
+    }
+
+    fn mouse_crossed(&mut self, area: &Area, left: bool) {
+        match self {
+            AreaHandlerTraitObject::Box(handler) => handler.mouse_crossed(area, left),
+            AreaHandlerTraitObject::Rc(handler) => handler.borrow_mut().mouse_crossed(area, left),
+        }
+    }
+
+    fn drag_broken(&mut self, area: &Area) {
+        match self {
+            AreaHandlerTraitObject::Box(handler) => handler.drag_broken(area),
+            AreaHandlerTraitObject::Rc(handler) => handler.borrow_mut().drag_broken(area),
+        }
+    }
+
+    fn key_event(&mut self, area: &Area, area_key_event: &AreaKeyEvent) -> bool {
+        match self {
+            AreaHandlerTraitObject::Box(handler) => handler.key_event(area, area_key_event),
+            AreaHandlerTraitObject::Rc(handler) => handler.borrow_mut().key_event(area, area_key_event),
+        }
+    }
+}
+
+impl<T> From<Box<T>> for AreaHandlerTraitObject where T: AreaHandler + 'static {
+    fn from(handler: Box<T>) -> Self {
+        AreaHandlerTraitObject::Box(handler)
+    }
+}
+
+impl<T> From<Rc<RefCell<T>>> for AreaHandlerTraitObject where T: AreaHandler + 'static {
+    fn from(handler: Rc<RefCell<T>>) -> Self {
+       AreaHandlerTraitObject::Rc(handler.clone() as Rc<RefCell<dyn AreaHandler>>)
+    }
+}
+
 #[repr(C)]
 struct RustAreaHandler {
     ui_area_handler: uiAreaHandler,
-    trait_object: Box<dyn AreaHandler>,
+    trait_object: AreaHandlerTraitObject,
 }
 
 impl RustAreaHandler {
-    fn new(_ctx: &UI, trait_object: Box<dyn AreaHandler>) -> Box<RustAreaHandler> {
+    fn new(_ctx: &UI, trait_object: AreaHandlerTraitObject) -> Box<RustAreaHandler> {
         return Box::new(RustAreaHandler {
             ui_area_handler: uiAreaHandler {
                 Draw: Some(draw),
@@ -148,9 +204,9 @@ define_control! {
 
 impl Area {
     /// Creates a new non-scrolling area.
-    pub fn new(ctx: &UI, area_handler: Box<dyn AreaHandler>) -> Area {
+    pub fn new<T>(ctx: &UI, area_handler: T) -> Area where T: Into<AreaHandlerTraitObject> {
         unsafe {
-            let mut rust_area_handler = RustAreaHandler::new(ctx, area_handler);
+            let mut rust_area_handler = RustAreaHandler::new(ctx, area_handler.into());
             let area = Area::from_raw(ui_sys::uiNewArea(
                 &mut *rust_area_handler as *mut RustAreaHandler as *mut uiAreaHandler,
             ));
@@ -160,14 +216,14 @@ impl Area {
     }
 
     /// Creates a new scrolling area.
-    pub fn new_scrolling(
+    pub fn new_scrolling<T>(
         ctx: &UI,
-        area_handler: Box<dyn AreaHandler>,
+        area_handler: T,
         width: i64,
         height: i64,
-    ) -> Area {
+    ) -> Area where T: Into<AreaHandlerTraitObject> {
         unsafe {
-            let mut rust_area_handler = RustAreaHandler::new(ctx, area_handler);
+            let mut rust_area_handler = RustAreaHandler::new(ctx, area_handler.into());
             let area = Area::from_raw(ui_sys::uiNewScrollingArea(
                 &mut *rust_area_handler as *mut RustAreaHandler as *mut uiAreaHandler,
                 width as i32,
